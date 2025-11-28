@@ -22,7 +22,7 @@ os.makedirs(img_output_dir, exist_ok=True)
 @register(
     "astrbot_plugin_comfyui_pro",  
     "lumingya",                    
-    "ComfyUI Pro 连接器",           
+    "将astrbot与comfyui链接，提供两种指令生图，一种llm自然语言生图，以及多种配置",         
     "1.1.0",                      
     "https://github.com/lumingya/astrbot_plugin_comfyui_pro" 
 )

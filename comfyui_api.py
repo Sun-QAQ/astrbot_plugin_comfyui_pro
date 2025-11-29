@@ -22,8 +22,8 @@ class ComfyUI:
         wf_conf = config.get("workflow_settings", {})
         self.wf_filename = wf_conf.get("json_file", "workflow_api.json")
         self.input_id = str(wf_conf.get("input_node_id", "6"))
-        self.seed_id = str(wf_conf.get("seed_node_id", "3"))
-        self.output_id = str(wf_conf.get("output_node_id", "")) 
+        self.seed_id = str(wf_conf.get("seed_node_id", "31"))
+        self.output_id = str(wf_conf.get("output_node_id", "9")) 
 
         # 路径处理
         self.current_dir = os.path.dirname(os.path.abspath(__file__)) # 保存这个路径方便后续拼接
@@ -32,22 +32,22 @@ class ComfyUI:
         logger.info(f"ComfyUI API 已加载 | 工作流: {self.wf_filename}")
 
     # ====== 新增：热重载配置的方法 ======
-    def reload_config(self, filename: str, input_id: str = None, seed_id: str = None, output_id: str = None):
+    def reload_config(self, filename: str, input_id: str = None, output_id: str = None, seed_id: str = None):
         """动态切换工作流，无需重启"""
         self.wf_filename = filename
         self.workflow_path = os.path.join(self.current_dir, 'workflow', filename)
         
         # 只有当传入了新的 ID 时才更新，否则保持原样
         if input_id: self.input_id = str(input_id)
-        if seed_id: self.seed_id = str(seed_id)
         if output_id: self.output_id = str(output_id)
+        if seed_id: self.seed_id = str(seed_id) # 保留对 seed_id 的支持，但不作为指令参数
         
         # 验证文件是否存在
         exists = os.path.exists(self.workflow_path)
         status = "存在" if exists else "不存在(请检查文件名)"
         
-        logger.info(f"[ComfyUI] 切换工作流 -> {filename} [{status}] | Input:{self.input_id} Seed:{self.seed_id}")
-        return exists, f"已切换至 {filename}，文件{status}。\n当前节点设置: Input={self.input_id}, Seed={self.seed_id}, Output={self.output_id or '自动'}"
+        logger.info(f"[ComfyUI] 切换工作流 -> {filename} [{status}] | Input:{self.input_id} Output:{self.output_id or '自动'} Seed:{self.seed_id}")
+        return exists, f"已切换至 {filename}，文件{status}。\n当前节点设置: Input={self.input_id}, Output={self.output_id or '自动'}"
     # =================================
 
     def _load_workflow(self):

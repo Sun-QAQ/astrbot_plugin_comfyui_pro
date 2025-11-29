@@ -74,13 +74,29 @@ class ComfyUI:
                 injected = True
                 break
         
-        # 2. 注入随机种子
+            # 2. 注入随机种子
         if self.seed_id and self.seed_id in workflow:
             s_node = workflow[self.seed_id].get("inputs", {})
             seed_val = random.randint(1, 999999999999999)
-            if "seed" in s_node: s_node["seed"] = seed_val
-            elif "noise_seed" in s_node: s_node["noise_seed"] = seed_val
-            elif "value" in s_node: s_node["value"] = seed_val 
+            
+            # === 兼容性修改开始 ===
+            # 情况A：如果是标准采样器 (KSampler)，它一定有 seed 或 noise_seed
+            if "seed" in s_node: 
+                s_node["seed"] = seed_val
+            elif "noise_seed" in s_node: 
+                s_node["noise_seed"] = seed_val
+            
+            # 情况B：如果是数值节点，且本来就有 value 键
+            elif "value" in s_node: 
+                s_node["value"] = seed_val
+            
+            # 情况C：如果上面都没有，强制添加 value 键
+            # 这种自定义节点通常需要 value 参数，但 JSON 里可能缺省
+            else:
+                s_node["value"] = seed_val
+            # === 兼容性修改结束 ===
+
+            logger.info(f"已向节点 [{self.seed_id}] 注入随机种子: {seed_val}")
 
 
     async def generate(self, prompt):

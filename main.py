@@ -415,7 +415,7 @@ class ComfyUIPlugin(Star):
             yield event.plain_result("错误：workflow 目录不存在。")
             return
 
-        files = [f for f in os.listdir(workflow_dir) if f.endswith('.json')]
+        files = sorted([f for f in os.listdir(workflow_dir) if f.endswith('.json')])
         if not files:
             yield event.plain_result("目录中没有 .json 文件。")
             return
@@ -423,18 +423,18 @@ class ComfyUIPlugin(Star):
         current_file = self.api.wf_filename if self.api else "未知"
         
         msg = ["📂 可用工作流列表："]
-        for f in files:
+        for i, f in enumerate(files, 1):
             mark = "✅ " if f == current_file else "   "
-            msg.append(f"{mark}{f}")
+            msg.append(f"{mark}{i}. {f}")
         
         msg.append("")
-        msg.append("切换指令：/comfy_use <文件名> [input_id] [seed_id]")
+        msg.append("切换指令：/comfy_use <序号> [input_id] [output_id]")
         yield event.plain_result("\n".join(msg))
 
     @filter.command("comfy_use")
     async def cmd_comfy_use(self, event: AstrMessageEvent):
         """切换工作流
-        用法: /comfy_use file.json [input_id] [seed_id] [output_id]
+        用法: /comfy_use <序号> [input_id] [output_id]
         """
         if not self._check_permission(event):
             yield event.plain_result("权限不足。")
@@ -442,25 +442,38 @@ class ComfyUIPlugin(Star):
 
         args = event.message_str.split()
         if len(args) < 2:
-            yield event.plain_result("参数错误。\n用法: /comfy_use <文件名> [input_id] [seed_id] [output_id]")
+            yield event.plain_result("参数错误。\n用法: /comfy_use <序号> [input_id] [output_id]")
             return
 
-        filename = args[1]
-        # 如果用户只输入了文件名，不带后缀，自动补全
-        if not filename.endswith(".json"):
-            filename += ".json"
+        # --- 核心修改：通过序号选择文件 ---
+        try:
+            workflow_dir = os.path.join(current_directory, 'workflow')
+            files = sorted([f for f in os.listdir(workflow_dir) if f.endswith('.json')])
+            
+            index = int(args[1])
+            if not (1 <= index <= len(files)):
+                yield event.plain_result(f"序号错误，请输入 1 到 {len(files)} 之间的数字。")
+                return
+            
+            filename = files[index - 1]
+        except ValueError:
+            yield event.plain_result("序号必须是数字。")
+            return
+        except Exception as e:
+            yield event.plain_result(f"查找工作流失败: {e}")
+            return
+        # --- 修改结束 ---
 
         # 获取可选参数
         inp_id = args[2] if len(args) > 2 else None
-        seed_id = args[3] if len(args) > 3 else None
-        out_id = args[4] if len(args) > 4 else None
+        out_id = args[3] if len(args) > 3 else None
 
         if not self.api:
             yield event.plain_result("插件未初始化。")
             return
 
-        # 调用 API 进行热切换
-        exists, msg = self.api.reload_config(filename, inp_id, seed_id, out_id)
+        # 调用 API 进行热切换 (不再传递 seed_id)
+        exists, msg = self.api.reload_config(filename, input_id=inp_id, output_id=out_id)
         yield event.plain_result(msg)
 
     @filter.command("comfy_save")
@@ -766,11 +779,6 @@ class ComfyUIPlugin(Star):
             yield event.plain_result("LLM 没有提供英文 prompt，请重试。")
             return
 
-        # === 中文检测，直接拒绝 ===
-        import re
-        if re.search(r'[\u4e00-\u9fff]', prompt):
-            yield event.plain_result(f"检测到中文 prompt（{prompt}），已取消。请确保生成英文关键词。")
-            return
 
         if self._is_group_message(event) and not self._is_group_allowed(event):
             yield event.plain_result(f"禁止输入。")

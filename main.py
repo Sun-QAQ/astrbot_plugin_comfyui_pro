@@ -467,13 +467,14 @@ class ComfyUIPlugin(Star):
         # 获取可选参数
         inp_id = args[2] if len(args) > 2 else None
         out_id = args[3] if len(args) > 3 else None
+        seed_id = args[4] if len(args) > 4 else None 
 
         if not self.api:
             yield event.plain_result("插件未初始化。")
             return
 
-        # 调用 API 进行热切换 (不再传递 seed_id)
-        exists, msg = self.api.reload_config(filename, input_id=inp_id, output_id=out_id)
+        # 调用 API 进行热切换 (传入 seed_id)
+        exists, msg = self.api.reload_config(filename, input_id=inp_id, output_id=out_id, seed_id=seed_id)
         yield event.plain_result(msg)
 
     @filter.command("comfy_save")

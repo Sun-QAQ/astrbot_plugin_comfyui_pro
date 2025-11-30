@@ -76,184 +76,63 @@ class ComfyUIPlugin(Star):
         logger.info(f"[ComfyUIPlugin] 载入配置的白名单群: {self.whitelist_group_ids}")
         logger.info(f"[ComfyUIPlugin] 管理员账号列表: {self.admin_user_ids}")
 
-        # 违禁词分类词库 (这里帮你补全了空字典，避免语法报错)
-        self.lexicon = {
-            "legacy_lite": [
-                # scat/urine
-                "shit", "poop", "feces", "urine", "piss", "scat", "pee", "peeing", "pissing",
-                "defecate", "defecation", "excrement", "bowel", "toilet", "potty",
-        
-                # 血腥/暴力（英文）
-                "blood", "gore", "bloody", "wound", "injury", "decapitation", "guro", "torture",
-                "behead", "severed", "bleeding", "hemorrhage", "bruise", "bruised", "cut", "cuts",
-                "stab", "stabbing", "slash", "slashing", "violence", "violent", "massacre",
-                "butcher", "mutilate", "dismember", "amputate", "laceration", "gash",
-        
-                # 体型/身体（英文）
-                "obese", "fat", "chubby", "plump", "overweight", "fatty", "fatso", "lard",
-                "blob", "thick", "chunky", "hefty", "pudgy", "rotund", "tubby", "porky",
-        
-                # 畸形/残疾/多肢等（英文）
-                "deformed", "mutilated", "amputee", "missing limbs", "extra limbs", "malformed", 
-                "mutation", "deformity", "disfigured", "disfigure", "cripple", "crippled",
-                "handicap", "handicapped", "disabled", "disability", "prosthetic", "stump",
-                "birth defect", "abnormal", "freak", "grotesque", "monstrous",
-        
-                # 兽交等（英文）
-                "zoophilia", "bestiality", "zoo", "animal sex", "beast", "bestial",
-                "furry sex", "anthro sex", "knot", "knotting", "mating",
-        
-                # 扶她等（英文）
-                "futanari", "futa", "dickgirl", "shemale", "newhalf", "hermaphrodite",
-                "trans", "transgender", "ladyboy", "femboy", "trap", "otokonoko",
-        
-                # 同人向（英文）
-                "yaoi", "bara", "bl", "boys love", "gay", "male on male", "homo",
-                "homosexual", "queer", "mlm", "shounen ai", "june", "tanbi",
-                "seme", "uke", "fujoshi", "fudanshi",
-
-                # ===== 拼音（扩展） =====
-                # 排泄类
-                "da bian", "dabian", "niao", "xiao bian", "xiaobian", "bian bian", "bianbian",
-                "la shi", "lashi", "ce suo", "cesuo", "mao keng", "maokeng",
-        
-                # 血腥/暴力
-                "xie xing", "xiexing", "duan tou", "duantou", "shang kou", "shangkou",
-                "ku xing", "kuxing", "lie qi", "lieqi", "sha ren", "sharen", "can sha", "cansha",
-                "xue", "liu xue", "liuxue", "bao li", "baoli", "nue sha", "nuesha",
-        
-                # 体型/身体
-                "fei pang", "feipang", "chao zhong", "chaozhong", "si fei zhu", "sifeizhu",
-                "pang zi", "pangzi", "fei zhu", "feizhu", "da pang zi", "dapangzi",
-        
-                # 畸形/残疾/多肢
-                "ji xing", "jixing", "jie zhi", "jiezhi", "can ji", "canji",
-                "tu bian", "tubian", "duo zhi", "duozhi", "que xian", "quexian",
-                "guai wu", "guaiwu", "guai tai", "guaitai",
-        
-                # 兽交等
-                "shou jiao", "shoujiao", "ren shou", "renshou", "dong wu", "dongwu",
-                "ye shou", "yeshou", "qin shou", "qinshou",
-        
-                # 同人向
-                "dan mei", "danmei", "nan tong", "nantong", "nan nan", "nannan",
-                "gei", "shou", "gong", "tong xing lian", "tongxinglian", "ji you", "jiyou",
-        
-                # 扶她
-                "fu ta", "futa", "bian xing", "bianxing", "liang xing", "liangxing",
-                "yin yang ren", "yinyangren", "shuang xing", "shuangxing",
-            ],
-
-            # 以下为 full 模式扩展
-            "minors": [
-                "loli", "lolicon", "shota", "shotacon", "lolita", "shouta",
-                "child porn", "cp", "underage", "minor", "kid", "kiddie",
-                "jk", "js", "jc", "elementary", "middle school", "kindergarten",
-                "toddler", "infant", "baby", "preteen", "prepubescent",
-                "pedo", "pedophile", "pedophilia", "hebephile", "hebephilia",
-            ],
-    
-            "sexual_violence": [
-                "rape", "rapist", "raping", "sexual assault", "molest", "molestation",
-                "forced sex", "coerce", "noncon", "non-consensual", "dubcon", "dub-con",
-                "date rape", "drugged", "rohypnol", "roofies", "assault", "violate",
-                "gang rape", "gangrape", "abuse", "abused", "force", "forced",
-                "blackmail", "hypnosis", "mind break", "mindbreak", "slave", "slavery",
-            ],
-    
-            "bestiality_incest_necrophilia": [
-                "bestiality", "zoophilia", "zoo", "animal sex", "beast sex",
-                "incest", "stepbro", "stepbrother", "stepsis", "stepsister", "stepmom",
-                "stepdad", "stepfather", "stepmother", "daddy", "mommy", "sister", "brother",
-                "father daughter", "mother son", "sibling", "family sex", "inbreeding",
-                "necrophilia", "necrophile", "corpse", "dead body", "cadaver",
-                "snuff", "death", "dying", "kill", "murder",
-            ],
-    
-            "violence_gore": [
-                "blood", "bloody", "gore", "gory", "guro", "bleeding", "hemorrhage",
-                "severed", "dismember", "decapitate", "decapitation", "behead", "beheading",
-                "amputation", "mutilate", "mutilation", "dissect", "dissection",
-                "disembowel", "entrails", "intestines", "organs", "viscera",
-                "slit throat", "stabbed", "execution", "impale", "impaled",
-                "torture", "corpse", "rotting", "laceration", "eviscerate",
-                "cannibalism", "cannibal", "flesh", "meat", "butcher",
-            ],
-    
-            "scat_urine_vomit": [
-                "shit", "poop", "feces", "urine", "pee", "piss", "scat", "scatology",
-                "vomit", "puke", "throw up", "barf", "diarrhea", "enema", 
-                "coprophagia", "coprophilia", "urophagia", "urophilia", "watersports",
-                "golden shower", "brown shower", "toilet", "potty", "diaper",
-                "da bian", "dabian", "niao", "la shi", "lashi",
-            ],
-    
-            "self_harm": [
-                "suicide", "self harm", "self-harm", "selfharm", "cut", "cutting",
-                "kms", "kys", "kill myself", "kill yourself", "end my life",
-                "slit wrists", "slit wrist", "overdose", "od", "hang myself",
-                "hanging", "noose", "jump off", "pill", "pills", "bleach",
-                "razor", "blade", "burn", "burning", "self mutilation",
-            ],
-    
-            "sexual": [
-                "sex", "porn", "pornography", "xxx", "adult", "explicit",
-                "nipple", "nipples", "areola", "tit", "tits", "titty", "titties",
-                "breasts", "breast", "boobs", "boob", "busty", "cleavage",
-                "ass", "butt", "buttocks", "anus", "anal", "oral", "fellatio",
-                "blowjob", "bj", "handjob", "hj", "footjob", "titjob", "paizuri",
-                "cum", "cumming", "semen", "ejaculate", "ejaculation", "orgasm",
-                "creampie", "bukkake", "facial", "deepthroat", "throat fuck",
-                "vagina", "vulva", "labia", "clitoris", "clit", "g-spot",
-                "penis", "dick", "cock", "phallus", "shaft", "glans", "balls",
-                "pussy", "cunt", "cunnilingus", "fingering", "masturbate",
-                "69", "threesome", "foursome", "gangbang", "orgy", "swinger",
-                "milf", "dilf", "gilf", "mature", "cougar",
-                "pegging", "rimming", "fisting", "anal beads", "dildo", "vibrator",
-                "nsfw", "lewd", "erotic", "explicit", "r18", "r-18", "adult only",
-                "hentai", "ecchi", "ahegao", "paipan", "oppai", "ero",
-            ],
-    
-            "nudity": [
-                "nude", "naked", "topless", "bottomless", "nip slip", "exposed",
-                "undress", "undressed", "strip", "stripped", "bare", "unclothed",
-                "birthday suit", "au naturel", "in the buff", "skinny dip",
-                "wardrobe malfunction", "see through", "transparent", "revealing",
-            ],
-    
-            "fetish": [
-                "bdsm", "bondage", "dominatrix", "fetish", "kink", "kinky",
-                "spanking", "spank", "whip", "whipping", "paddle", "cane",
-                "submissive", "sub", "dom", "dominant", "master", "slave",
-                "chastity", "chastity belt", "collar", "leash", "cage",
-                "latex", "leather", "rubber", "pvc", "catsuit",
-                "footjob", "foot fetish", "feet", "toes", "soles",
-                "armpit", "smell", "sniff", "lick", "worship",
-            ],
-        }
-
+        # ====== 修改：从 JSON 文件加载违禁词 ======
+        self.lexicon = {}
+        try:
+            # 拼接 json 文件路径 (current_directory 在文件开头已定义)
+            lexicon_path = os.path.join(current_directory, "sensitive_words.json")
+            
+            if os.path.exists(lexicon_path):
+                with open(lexicon_path, "r", encoding="utf-8") as f:
+                    self.lexicon = json.load(f)
+                logger.info(f"[ComfyUIPlugin] 已成功加载敏感词库: {lexicon_path}")
+            else:
+                logger.warning(f"[ComfyUIPlugin] 未找到敏感词文件: {lexicon_path}，将使用空词库。")
+                self.lexicon = {"legacy_lite": [], "full": []} 
+                
+        except Exception as e:
+            logger.error(f"[ComfyUIPlugin] 加载敏感词库失败: {e}")
+            self.lexicon = {"legacy_lite": [], "full": []}
+        # ========================================
 
         # 预编译不同策略对应的正则
         self._policy_patterns = {}
         self._build_policy_patterns()
-        llm_settings = config.get("llm_settings", {})
+        
+        # ====== 调试诊断代码开始 ======
+        # 1. 打印一下 config 里到底都有啥
+        # ====== 修正后的读取逻辑 ======
+        # 1. 优先从 config["llm_settings"] (旧版结构) 找
+        llm_settings = config.get("llm_settings")
+        
+        # 2. 如果没找到，去 config["control"]["llm_settings"] (新版结构) 找
+        if not llm_settings:
+             control_conf = config.get("control", {})
+             llm_settings = control_conf.get("llm_settings", {})
+
+        # 3. 读取 prompt
         system_prompt = llm_settings.get("system_prompt", "")
-        if system_prompt:
+        
+        # 4. 判断逻辑
+        if system_prompt and len(str(system_prompt).strip()) > 0:
             # 修改类方法的文档
             self.comfyui_txt2img.__func__.__doc__ = system_prompt
-            logger.info("[ComfyUIPlugin] 已从配置加载自定义 System Prompt")
         else:
-            logger.warning("[ComfyUIPlugin] 未检测到自定义 Prompt，将使用代码内默认值")
+            logger.warning(f"[ComfyUIPlugin] ❌ 未检测到自定义 Prompt (读取到的值为: '{system_prompt}')，将使用默认值")
+        # ========================================
+        
         self.comfy_ui = None
         self.api = None
         try:
             self.api = ComfyUI(self.config) 
         except Exception as e:
             logger.error(f"【初始化 ComfyUI 客户端失败】: {e}")
-                # ====== 初始化入口 ======
+
+    # ====== 初始化入口 ======
     async def initialize(self):
         # 这里只做初始化操作
         self.context.activate_llm_tool("comfyui_txt2img")
+
     def _auto_update_schema(self):
         """[调试版] 启动时扫描 workflow 目录，强制更新 UI"""
         try:
@@ -270,7 +149,6 @@ class ComfyUIPlugin(Star):
                 return
 
             files = [f for f in os.listdir(workflow_dir) if f.endswith('.json')]
-            logger.info(f"[ComfyUI] 扫描到的文件: {files}")
 
             if not files:
                 files = ["workflow_api.json"] # 兜底
@@ -292,12 +170,13 @@ class ComfyUIPlugin(Star):
                 json.dump(data, f, indent=2, ensure_ascii=False)
             
             logger.info(f"[ComfyUI] 配置文件已更新! 写入列表: {files}")
-            logger.info(f"[ComfyUI] 请【完全重启】AstrBot 以加载新选项")
+            logger.info(f"[ComfyUI] 请按照教程重载-刷新-重载以加载新选项")
 
         except Exception as e:
             # 把错误完整打印出来
             logger.error(f"[ComfyUI] 更新 UI 失败，报错信息如下:")
             logger.error(traceback.format_exc())
+
     # ====== 核心绘图逻辑 (从 initialize 里移出来的) ======
     async def _handle_paint_logic(self, event: AstrMessageEvent, direct_send: bool):
         """这是处理画图的核心逻辑"""
@@ -466,15 +345,14 @@ class ComfyUIPlugin(Star):
 
         # 获取可选参数
         inp_id = args[2] if len(args) > 2 else None
-        out_id = args[3] if len(args) > 3 else None
-        seed_id = args[4] if len(args) > 4 else None 
+        out_id = args[3] if len(args) > 3 else None 
 
         if not self.api:
             yield event.plain_result("插件未初始化。")
             return
 
         # 调用 API 进行热切换 (传入 seed_id)
-        exists, msg = self.api.reload_config(filename, input_id=inp_id, output_id=out_id, seed_id=seed_id)
+        exists, msg = self.api.reload_config(filename, input_id=inp_id, output_id=out_id)
         yield event.plain_result(msg)
 
     @filter.command("comfy_save")

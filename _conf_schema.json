@@ -28,12 +28,6 @@
         "default": "6",
         "obvious_hint": true
       },
-      "seed_node_id": {
-        "description": "随机种子节点 ID (Seed)",
-        "type": "string",
-        "hint": "通常是 KSampler 或 Seed 节点的 ID",
-        "default": "3"
-      },
       "output_node_id": {
         "description": "图片输出节点 ID (Image)",
         "type": "string",
@@ -111,4 +105,5 @@
       }
     }
   }
+
 }

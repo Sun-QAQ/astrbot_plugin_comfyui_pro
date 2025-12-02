@@ -29,97 +29,54 @@ os.makedirs(img_output_dir, exist_ok=True)
 class ComfyUIPlugin(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
-        self._auto_update_schema()
-        self.config = config  
+        self.config = config
         
-        # 从配置里读全局参数
-        self.cooldown_seconds = config["control"]["cooldown_seconds"]
+        # 1. 正常读取其他配置
+        self._auto_update_schema()
+        
+        # Control 配置
+        control_conf = config.get("control", {})
+        self.cooldown_seconds = control_conf.get("cooldown_seconds", 60)
         self.user_cooldowns = {}
+        self.admin_user_ids = set(map(str, control_conf.get("admin_ids", [])))
+        self.lockdown = bool(control_conf.get("lockdown", False))
+        self.whitelist_group_ids = set(map(str, control_conf.get("whitelist_group_ids", [])))
 
-        # 管理员 QQ
-        self.admin_user_ids = set(map(str, config["control"]["admin_ids"]))
-        # 全局锁定开关
-        self.lockdown = bool(config["control"].get("lockdown", False))
-        # 白名单群
-        self.whitelist_group_ids = set(map(str, config["control"]["whitelist_group_ids"]))
-
-        # 默认敏感词策略
-        self.default_group_policy = str(config["control"]["default_group_policy"]).lower()
-        self.default_private_policy = str(config["control"]["default_private_policy"]).lower()
+        # 策略配置
+        self.default_group_policy = str(control_conf.get("default_group_policy", "none")).lower()
+        self.default_private_policy = str(control_conf.get("default_private_policy", "none")).lower()
         self.group_policies = {
             str(k): str(v).lower()
-            for k, v in config["control"].get("group_policies", {}).items()
+            for k, v in control_conf.get("group_policies", {}).items()
         }
-        # 违禁词策略
         self.policies = {
             "none": set(),
             "lite": {"legacy_lite"},
-            "full": {
-                "legacy_lite",
-                "minors",
-                "sexual_violence",
-                "bestiality_incest_necrophilia",
-                "violence_gore",
-                "scat_urine_vomit",
-                "self_harm",
-                "sexual",
-                "nudity",
-                "fetish",
-            },
+            "full": {"legacy_lite", "minors", "sexual_violence", "bestiality_incest_necrophilia", "violence_gore", "scat_urine_vomit", "self_harm", "sexual", "nudity", "fetish"},
         }
 
-        # 管理员绕过控制
-        self.admin_bypass_whitelist = config["control"]["admin_bypass"]["whitelist"]
-        self.admin_bypass_cooldown = config["control"]["admin_bypass"]["cooldown"]
-        self.admin_bypass_sensitive = config["control"]["admin_bypass"]["sensitive_words"]
+        # 管理员绕过配置
+        bypass = control_conf.get("admin_bypass", {})
+        self.admin_bypass_whitelist = bypass.get("whitelist", True)
+        self.admin_bypass_cooldown = bypass.get("cooldown", True)
+        self.admin_bypass_sensitive = bypass.get("sensitive_words", True)
 
         logger.info(f"[ComfyUIPlugin] 载入配置的白名单群: {self.whitelist_group_ids}")
-        logger.info(f"[ComfyUIPlugin] 管理员账号列表: {self.admin_user_ids}")
 
-        # ====== 修改：从 JSON 文件加载违禁词 ======
+        # 加载敏感词
         self.lexicon = {}
         try:
-            # 拼接 json 文件路径 (current_directory 在文件开头已定义)
             lexicon_path = os.path.join(current_directory, "sensitive_words.json")
-            
             if os.path.exists(lexicon_path):
                 with open(lexicon_path, "r", encoding="utf-8") as f:
                     self.lexicon = json.load(f)
-                logger.info(f"[ComfyUIPlugin] 已成功加载敏感词库: {lexicon_path}")
             else:
-                logger.warning(f"[ComfyUIPlugin] 未找到敏感词文件: {lexicon_path}，将使用空词库。")
                 self.lexicon = {"legacy_lite": [], "full": []} 
-                
-        except Exception as e:
-            logger.error(f"[ComfyUIPlugin] 加载敏感词库失败: {e}")
+        except Exception:
             self.lexicon = {"legacy_lite": [], "full": []}
-        # ========================================
 
-        # 预编译不同策略对应的正则
         self._policy_patterns = {}
         self._build_policy_patterns()
-        
-        # ====== 调试诊断代码开始 ======
-        # 1. 打印一下 config 里到底都有啥
-        # ====== 修正后的读取逻辑 ======
-        # 1. 优先从 config["llm_settings"] (旧版结构) 找
-        llm_settings = config.get("llm_settings")
-        
-        # 2. 如果没找到，去 config["control"]["llm_settings"] (新版结构) 找
-        if not llm_settings:
-             control_conf = config.get("control", {})
-             llm_settings = control_conf.get("llm_settings", {})
-
-        # 3. 读取 prompt
-        system_prompt = llm_settings.get("system_prompt", "")
-        
-        # 4. 判断逻辑
-        if system_prompt and len(str(system_prompt).strip()) > 0:
-            # 修改类方法的文档
-            self.comfyui_txt2img.__func__.__doc__ = system_prompt
-        else:
-            logger.warning(f"[ComfyUIPlugin] ❌ 未检测到自定义 Prompt (读取到的值为: '{system_prompt}')，将使用默认值")
-        # ========================================
         
         self.comfy_ui = None
         self.api = None
@@ -127,6 +84,38 @@ class ComfyUIPlugin(Star):
             self.api = ComfyUI(self.config) 
         except Exception as e:
             logger.error(f"【初始化 ComfyUI 客户端失败】: {e}")
+    @filter.on_llm_request()
+    async def inject_system_prompt(self, event: AstrMessageEvent, req):
+        """
+        在 LLM 请求发送前，从 config['control']['llm_settings'] 读取并注入提示词。
+        """
+        try:
+            # 1. 按照正确的层级读取配置
+            control_conf = self.config.get("control", {})
+            llm_settings = control_conf.get("llm_settings", {})
+            my_prompt = llm_settings.get("system_prompt", "")
+
+            # 如果没配置或为空，直接返回
+            if not my_prompt:
+                return
+
+            # 2. 标准注入逻辑 (只修改 system_prompt 字段)
+            current_prompt = getattr(req, "system_prompt", "") or ""
+
+            # 简单去重：如果已经包含该提示词，就不再添加
+            if my_prompt in current_prompt:
+                return
+
+            # 3. 追加拼接
+            if current_prompt:
+                req.system_prompt = f"{current_prompt}\n\n{my_prompt}".strip()
+            else:
+                req.system_prompt = my_prompt.strip()
+
+            # logger.info(f"[ComfyUI] 系统提示词注入成功")
+
+        except Exception as e:
+            logger.error(f"[ComfyUI] 注入提示词异常: {e}")
 
     # ====== 初始化入口 ======
     async def initialize(self):

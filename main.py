@@ -4,7 +4,6 @@ import time
 import re
 import base64
 import traceback
-import urllib.request
 import json
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
@@ -603,13 +602,13 @@ class ComfyUIPlugin(Star):
 
         # 2) 提取 prompt
         prompt = None
-        m = re.search(r"提示词[���:：]\s*([^\n]+)", full_text)
+        m = re.search(r"提示词[   :：]\s*([^\n]+)", full_text)
         if m:
             prompt = (
                 m.group(1)
                 .strip()
-                .lstrip('`""'')
-                .rstrip('`""'')
+                .lstrip('`"\'')  # 修复：包含了反引号、双引号、转义后的单引号
+                .rstrip('`"\'')
                 .strip()
             )
 

@@ -234,7 +234,7 @@ class ComfyUIPlugin(Star):
             tips.extend([
                 "【工作流管理 (管理员)】",
                 "  • /comfy_ls               → 列出所有工作流",
-                "  • /comfy_use <文件名> [ID...] → 切换工作流",
+                "  • /comfy_use <文件id><输入节点id><输出节点id> → 切换工作流",
                 "  • /comfy_save <文件名> <JSON> → 导入新工作流",
                 "",
                 "【控制指令】",

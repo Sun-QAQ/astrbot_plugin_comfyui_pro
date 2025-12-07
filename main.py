@@ -86,23 +86,28 @@ class ComfyUIPlugin(Star):
     @filter.on_llm_request()
     async def inject_system_prompt(self, event: AstrMessageEvent, req):
         """
-        在 LLM 请求发送前，从 config['control']['llm_settings'] 读取并注入提示词。
+        在 LLM 请求发送前，从 config['llm_settings'] 读取并注入提示词。
         """
         try:
-            # 1. 按照正确的层级读取配置
-            control_conf = self.config.get("control", {})
-            llm_settings = control_conf.get("llm_settings", {})
+            # 【调试日志】确认函数被触发
+            # logger.info(f"[ComfyUI] 拦截到 LLM 请求，准备注入提示词...")
+
+            
+            llm_settings = self.config.get("llm_settings", {}) 
             my_prompt = llm_settings.get("system_prompt", "")
 
-            # 如果没配置或为空，直接返回
+            # 如果没配置或为空，打印警告并返回
             if not my_prompt:
+                logger.warning("[ComfyUI] 配置中 system_prompt 为空，跳过注入。")
                 return
 
             # 2. 标准注入逻辑 (只修改 system_prompt 字段)
+            # 获取当前已有的 system_prompt (防止报错用 getattr)
             current_prompt = getattr(req, "system_prompt", "") or ""
 
             # 简单去重：如果已经包含该提示词，就不再添加
             if my_prompt in current_prompt:
+                # logger.info("[ComfyUI] 提示词已存在，跳过重复注入")
                 return
 
             # 3. 追加拼接
@@ -111,10 +116,11 @@ class ComfyUIPlugin(Star):
             else:
                 req.system_prompt = my_prompt.strip()
 
-            # logger.info(f"[ComfyUI] 系统提示词注入成功")
+            logger.info(f"[ComfyUI] 系统提示词注入成功 (长度: {len(my_prompt)})")
 
         except Exception as e:
             logger.error(f"[ComfyUI] 注入提示词异常: {e}")
+            logger.error(traceback.format_exc())
 
     # ====== 初始化入口 ======
     async def initialize(self):

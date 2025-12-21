@@ -3,10 +3,19 @@ import random
 import os
 import aiohttp
 import asyncio
+from pathlib import Path
 from astrbot.api import logger
 
+
 class ComfyUI:
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, data_dir: Path = None) -> None:
+        """
+        初始化 ComfyUI API 客户端
+        
+        Args:
+            config: 插件配置字典
+            data_dir: 持久化数据目录（由 main.py 传入）
+        """
         # 读取基础配置
         self.server_address = config.get("server_address", "127.0.0.1:8188")
         self.url = f"http://{self.server_address}"
@@ -18,50 +27,58 @@ class ComfyUI:
         self.height = sub_conf.get("height", 1024)
         self.neg_prompt = sub_conf.get("negative_prompt", "")
 
-        # 读取工作流配置 (初始值)
+        # 读取工作流配置
         wf_conf = config.get("workflow_settings", {})
         self.wf_filename = wf_conf.get("json_file", "workflow_api.json")
         self.input_id = str(wf_conf.get("input_node_id", "6"))
+        self.neg_node_id = str(wf_conf.get("neg_node_id", "")) 
         self.output_id = str(wf_conf.get("output_node_id", "9"))
 
-        # 种子节点配置已废弃，不再使用
         self.seed_id = None
 
-        # 路径处理
-        self.current_dir = os.path.dirname(os.path.abspath(__file__)) # 保存这个路径方便后续拼接
-        self.workflow_path = os.path.join(self.current_dir, 'workflow', self.wf_filename)
+        # ====== 关键改动：使用持久化目录 ======
+        if data_dir is not None:
+            self.data_dir = Path(data_dir)
+        else:
+            # 备用方案：使用插件目录（不推荐）
+            self.data_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+            logger.warning("[ComfyUI API] 未传入 data_dir，使用插件目录（更新后可能丢失数据）")
         
-        logger.info(f"ComfyUI API 已加载 | 工作流: {self.wf_filename}")
+        self.workflow_dir = self.data_dir / "workflow"
+        self.workflow_path = self.workflow_dir / self.wf_filename
+        
+        logger.info(f"[ComfyUI API] 已加载 | 工作流目录: {self.workflow_dir} | 当前工作流: {self.wf_filename}")
 
-    # ====== 新增：热重载配置的方法 ======
-    def reload_config(self, filename: str, input_id: str = None, output_id: str = None):
+    def reload_config(self, filename: str, input_id: str = None, output_id: str = None, neg_node_id: str = None):
         """动态切换工作流，无需重启"""
         self.wf_filename = filename
-        self.workflow_path = os.path.join(self.current_dir, 'workflow', filename)
+        self.workflow_path = self.workflow_dir / filename
 
         if input_id:
             self.input_id = str(input_id)
         if output_id:
             self.output_id = str(output_id)
-
-        exists = os.path.exists(self.workflow_path)
+        if neg_node_id:
+            self.neg_node_id = str(neg_node_id)
+        
+        exists = self.workflow_path.exists()
         status = "存在" if exists else "不存在(请检查文件名)"
 
         logger.info(
-            f"[ComfyUI] 切换工作流 -> {filename} [{status}] | Input:{self.input_id} "
-            f"Output:{self.output_id or '自动'}"
+            f"[ComfyUI] 切换工作流 -> {filename} [{status}] | "
+            f"Input:{self.input_id} | Neg:{self.neg_node_id} | Output:{self.output_id or '自动'}"
         )
-        return exists, f"已切换至 {filename}，文件{status}。\n当前节点设置: Input={self.input_id}, Output={self.output_id or '自动'}"
-    # =================================
+        return exists, (f"已切换至 {filename}，文件{status}。\n"
+                        f"当前节点设置: Positive={self.input_id}, Negative={self.neg_node_id}, Output={self.output_id or '自动'}")
 
     def _load_workflow(self):
-        if not os.path.exists(self.workflow_path):
+        if not self.workflow_path.exists():
             raise FileNotFoundError(f"工作流文件不存在: {self.workflow_path}")
         with open(self.workflow_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     def _inject_params(self, workflow, prompt):
-        """最简版参数注入：写提示词 + 强制改所有 seed/noise_seed"""
+        """参数注入：写提示词 + 强制改所有 seed/noise_seed"""
         # 1. 注入正向提示词
         node = workflow.get(self.input_id)
         if not node:
@@ -78,11 +95,27 @@ class ComfyUI:
             if key in inputs:
                 inputs[key] = prompt
                 break
-
-        # 2. 为本次请求生成一个“基础随机种子”
+        
+        if self.neg_node_id and self.neg_prompt:
+            neg_node = workflow.get(self.neg_node_id)
+            if neg_node:
+                n_inputs = neg_node.get("inputs", {})
+                n_keys = ["text", "string", "negative", "text_negative", "prompt"]
+                for n_key in n_keys:
+                    if n_key in n_inputs:
+                        existing_neg = str(n_inputs.get(n_key, "")).strip()
+                        config_neg = self.neg_prompt.strip()
+                    
+                        if existing_neg and config_neg:
+                            n_inputs[n_key] = f"{existing_neg}, {config_neg}"
+                        elif config_neg:
+                            n_inputs[n_key] = config_neg
+                        break
+        
+        # 2. 为本次请求生成随机种子
         base_seed = random.randint(1, 999999999999999)
 
-        # 3. 遍历整个 workflow，把所有含有 seed / noise_seed 的输入都改掉
+        # 3. 遍历整个 workflow，把所有 seed / noise_seed 都改掉
         ks_count = 0
         offset = 0
 
@@ -95,13 +128,11 @@ class ComfyUI:
 
             changed = False
 
-            # 如果有 seed 字段，就写一个基于 base_seed 的值
             if "seed" in n_inputs:
                 n_inputs["seed"] = base_seed + offset
                 offset += 1
                 changed = True
 
-            # 如果有 noise_seed 字段，同样处理
             if "noise_seed" in n_inputs:
                 n_inputs["noise_seed"] = base_seed + offset
                 offset += 1
@@ -122,11 +153,9 @@ class ComfyUI:
         except Exception as e:
             return None, str(e)
         
-        # 注入所有参数
         self._inject_params(workflow, prompt)
 
         async with aiohttp.ClientSession() as session:
-            # 1. 发送请求
             payload = {"prompt": workflow, "client_id": client_id}
             try:
                 async with session.post(f"{self.url}/prompt", json=payload) as resp:
@@ -137,12 +166,12 @@ class ComfyUI:
             except Exception as e:
                 return None, f"请求报错: {str(e)}"
 
-            # 2. 轮询等待结果
             for _ in range(300): 
                 await asyncio.sleep(1)
                 try:
                     async with session.get(f"{self.url}/history/{prompt_id}") as h_resp:
-                        if h_resp.status != 200: continue
+                        if h_resp.status != 200:
+                            continue
                         history = await h_resp.json()
                 except:
                     continue
@@ -151,12 +180,11 @@ class ComfyUI:
                     outputs = history[prompt_id].get("outputs", {})
                     img_info = None
                     
-                    # 策略 A: 指定了输出 ID
                     if self.output_id and self.output_id in outputs:
                         imgs = outputs[self.output_id].get("images", [])
-                        if imgs: img_info = imgs[0]
+                        if imgs:
+                            img_info = imgs[0]
                     
-                    # 策略 B: 自动寻找
                     if not img_info:
                         for node_out in outputs.values():
                             if "images" in node_out and node_out["images"]:

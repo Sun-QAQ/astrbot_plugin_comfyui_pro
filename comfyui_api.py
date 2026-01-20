@@ -250,6 +250,31 @@ class ComfyUI:
                         logger.debug(f"[ComfyUI] 节点 {nid}.{key}: [{ref_node_id}] -> {new_steps}")
     
         return override_count
+
+    async def delete_history(self, session: aiohttp.ClientSession, prompt_id: str) -> bool:
+        """
+        删除 ComfyUI 历史记录中的指定任务
+        
+        Args:
+            session: aiohttp 会话
+            prompt_id: 要删除的任务 ID
+        
+        Returns:
+            bool: 是否删除成功
+        """
+        try:
+            payload = {"delete": [prompt_id]}
+            async with session.post(f"{self.url}/api/history", json=payload) as resp:
+                if resp.status == 200:
+                    logger.info(f"[ComfyUI] ✓ 已删除历史记录: {prompt_id}")
+                    return True
+                else:
+                    logger.warning(f"[ComfyUI] 删除历史记录失败: HTTP {resp.status}")
+                    return False
+        except Exception as e:
+            logger.warning(f"[ComfyUI] 删除历史记录异常: {e}")
+            return False
+
     async def generate(self, prompt):
         """异步生成图片"""
         client_id = str(random.randint(100000, 999999))
@@ -304,7 +329,10 @@ class ComfyUI:
                         
                         async with session.get(img_url) as img_res:
                             if img_res.status == 200:
-                                return await img_res.read(), None 
+                                img_data = await img_res.read()
+                                # 图片下载成功后，删除历史记录
+                                await self.delete_history(session, prompt_id)
+                                return img_data, None 
                             else:
                                 return None, "下载图片失败"
                     else:

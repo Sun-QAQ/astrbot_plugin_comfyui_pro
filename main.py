@@ -995,6 +995,10 @@ class ComfyUIPlugin(Star):
     
         if not cleaned_prompts:
             return
+
+        # 同时匹配 <提示词>...</提示词> 或 <think>...</think>
+        pattern = r'<(提示词|think)>.*?</\1>'
+        resp.completion_text = re.sub(pattern, '', full_text, flags=re.DOTALL).strip()
     
         # 如果只有一个提示词 → 单图模式
         if len(cleaned_prompts) == 1:

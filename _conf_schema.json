@@ -1,4 +1,12 @@
 {
+  "image_backend": {
+    "title": "生图后端",
+    "description": "选择生图方式：comfyui 使用本地 ComfyUI，gitee 使用 Gitee AI 云端生图",
+    "type": "string",
+    "default": "comfyui",
+    "options": ["comfyui", "gitee"],
+    "enum": ["comfyui", "gitee"]
+  },
   "server_address": {
     "description": "ComfyUI 服务端 IP、端口",
     "type": "string",
@@ -58,6 +66,50 @@
         "type": "string",
         "hint": "留空则自动寻找第一个包含图片的输出节点",
         "default": ""
+      }
+    }
+  },
+  "gitee_settings": {
+    "description": "Gitee AI 生图配置（后端选择 gitee 时生效）",
+    "type": "object",
+    "items": {
+      "api_key": {
+        "title": "API Key",
+        "description": "Gitee AI 平台的 API Key",
+        "type": "string",
+        "hint": "前往 https://ai.gitee.com 获取",
+        "obvious_hint": true,
+        "default": ""
+      },
+      "model": {
+        "title": "模型",
+        "description": "生图模型名称",
+        "type": "string",
+        "default": "z-image-turbo"
+      },
+      "negative_prompt": {
+        "title": "负面提示词",
+        "description": "全局负面提示词",
+        "type": "string",
+        "default": "blurry ugly bad"
+      },
+      "num_inference_steps": {
+        "title": "推理步数",
+        "description": "生图推理步数，越大越精细但越慢",
+        "type": "int",
+        "default": 9
+      },
+      "guidance_scale": {
+        "title": "引导系数",
+        "description": "提示词引导强度",
+        "type": "float",
+        "default": 1
+      },
+      "image_scale": {
+        "title": "图片缩放",
+        "description": "输出图片缩放比例",
+        "type": "float",
+        "default": 1
       }
     }
   },

@@ -110,15 +110,21 @@ class ComfyUIPlugin(Star):
         self._policy_patterns = {}
         self._build_policy_patterns()
         
-        # 初始化 ComfyUI API
+        # 初始化生图后端
+        self.image_backend = config.get("image_backend", "comfyui").lower()
         self.comfy_ui = None
         self.api = None
         try:
-            from .comfyui_api import ComfyUI
-            self.api = ComfyUI(self.config, data_dir=self.data_dir)
-            logger.info(f"[ComfyUI] ✅ ComfyUI API 初始化成功")
+            if self.image_backend == "gitee":
+                from .gitee_api import GiteeImageAPI
+                self.api = GiteeImageAPI(self.config)
+                logger.info(f"[ComfyUI] ✅ Gitee AI 后端初始化成功")
+            else:
+                from .comfyui_api import ComfyUI
+                self.api = ComfyUI(self.config, data_dir=self.data_dir)
+                logger.info(f"[ComfyUI] ✅ ComfyUI 后端初始化成功")
         except Exception as e:
-            logger.error(f"[ComfyUI] ❌ ComfyUI API 初始化失败: {e}")
+            logger.error(f"[ComfyUI] ❌ 生图后端初始化失败: {e}")
             logger.error(traceback.format_exc())
 
     # ====== 获取持久化目录 ======
@@ -408,6 +414,7 @@ class ComfyUIPlugin(Star):
         # 状态信息
         tips.append("━━━━━━━━━━━━━━━━━━")
         tips.append(f"📍 当前位置：{'群聊 ' + gid if gid else '私聊'}")
+        tips.append(f"🖥️ 生图后端：{self.image_backend}")
         tips.append(f"🔒 违禁级别：{policy}")
         tips.append(f"⏱️ 冷却时间：{self.cooldown_seconds} 秒")
         if is_admin:
@@ -708,12 +715,20 @@ class ComfyUIPlugin(Star):
         logger.info(f"[ComfyUI] 群 {gid} 违禁级别已设为 {level}（操作者：{user_id}）")
         yield event.plain_result(f"✅ 已将本群违禁级别设置为：{level}")
 
+    def _is_comfyui_backend(self) -> bool:
+        """当前是否使用 ComfyUI 后端"""
+        return self.image_backend != "gitee"
+
     @filter.command("comfy_ls")
     async def cmd_comfy_list(self, event: AstrMessageEvent):
         """列出当前所有可用工作流"""
         user_id = str(event.get_sender_id())
         if user_id not in self.admin_user_ids:
             yield event.plain_result("🚫 权限不足，仅管理员可查看工作流列表")
+            return
+
+        if not self._is_comfyui_backend():
+            yield event.plain_result("ℹ️ 当前使用 Gitee AI 后端，工作流管理仅在 ComfyUI 模式下可用")
             return
 
         if not self.workflow_dir.exists():
@@ -771,6 +786,10 @@ class ComfyUIPlugin(Star):
             yield event.plain_result("🚫 权限不足，仅管理员可切换工作流")
             return
 
+        if not self._is_comfyui_backend():
+            yield event.plain_result("ℹ️ 当前使用 Gitee AI 后端，工作流管理仅在 ComfyUI 模式下可用")
+            return
+
         args = event.message_str.split()
         if len(args) < 2:
             yield event.plain_result(
@@ -826,6 +845,10 @@ class ComfyUIPlugin(Star):
             yield event.plain_result("🚫 权限不足，仅管理员可导入工作流")
             return
 
+        if not self._is_comfyui_backend():
+            yield event.plain_result("ℹ️ 当前使用 Gitee AI 后端，工作流管理仅在 ComfyUI 模式下可用")
+            return
+
         full_text = event.message_str
         content = full_text.split(maxsplit=2)
         
@@ -869,11 +892,15 @@ class ComfyUIPlugin(Star):
     @filter.command("comfy_add")
     async def cmd_comfy_add(self, event: AstrMessageEvent):
         """给当前工作流的指定节点绑定步数覆盖"""
-    
+
         # 权限检查
         user_id = str(event.get_sender_id())
         if user_id not in self.admin_user_ids:
             yield event.plain_result("🚫 权限不足，仅管理员可设置步数覆盖")
+            return
+
+        if not self._is_comfyui_backend():
+            yield event.plain_result("ℹ️ 当前使用 Gitee AI 后端，步数覆盖仅在 ComfyUI 模式下可用")
             return
     
         # 检查 API
@@ -1467,7 +1494,7 @@ class ComfyUIPlugin(Star):
 
         # API 检查
         if not getattr(self, 'api', None):
-            yield event.plain_result("❌ ComfyUI 服务未连接，请检查配置")
+            yield event.plain_result("❌ 生图服务未连接，请检查配置")
             return
         
         try:

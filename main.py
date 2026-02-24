@@ -1197,24 +1197,33 @@ class ComfyUIPlugin(Star):
     # ====== 修改提取逻辑 ======
     @filter.on_llm_response(priority=70)
     async def _extract_prompt_before_filter(self, event: AstrMessageEvent, resp: LLMResponse):
-        """提取 LLM 回复中的提示词（使用 <pic prompt="..."> 格式）"""
+        """提取 LLM 回复中的提示词（支持 <pic prompt="..."> 和 <提示词>...</提示词> 两种格式）"""
         if not resp or not resp.completion_text:
             return
-    
+
         full_text = resp.completion_text
-    
-        # 提取所有 <pic prompt="...">
+
+        # 提取所有提示词：同时支持两种格式
         prompts = re.findall(r'<pic\s+prompt="(.*?)">', full_text, flags=re.DOTALL)
-    
+        if not prompts:
+            prompts = re.findall(r'<提示词>(.*?)</提示词>', full_text, flags=re.DOTALL)
+            self._prompt_tag_format = "cn"
+        else:
+            self._prompt_tag_format = "pic"
+
         if not prompts:
             return
 
-        # 清理文本供其他插件使用（移除 <pic>、<think>、<ctx> 标签）
+        # 清理文本供其他插件使用（移除提示词标签、<think>、<ctx> 标签）
         cleaned_text = re.sub(r'<pic\s+prompt=".*?">', '', full_text, flags=re.DOTALL)
+        cleaned_text = re.sub(r'<提示词>.*?</提示词>', '', cleaned_text, flags=re.DOTALL)
         cleaned_text = re.sub(r'<think>.*?</think>', '', cleaned_text, flags=re.DOTALL)
         cleaned_text = re.sub(r'</?ctx>', '', cleaned_text)
         cleaned_text = cleaned_text.strip()
         event.set_extra("comfy_cleaned_text", cleaned_text)
+
+        # 将清理后的文本写回，防止标签泄露给用户
+        resp.completion_text = cleaned_text
     
         # 清理提示词内容
         cleaned_prompts = []
@@ -1254,7 +1263,10 @@ class ComfyUIPlugin(Star):
     
         # 多图模式
         if self.multi_image_mode:
-            parts = re.split(r'<pic\s+prompt=".*?">', full_text, flags=re.DOTALL)
+            if self._prompt_tag_format == "cn":
+                parts = re.split(r'<提示词>.*?</提示词>', full_text, flags=re.DOTALL)
+            else:
+                parts = re.split(r'<pic\s+prompt=".*?">', full_text, flags=re.DOTALL)
         
             segments = []
             prompt_idx = 0

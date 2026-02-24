@@ -6,6 +6,7 @@ import traceback
 import json
 import shutil
 import asyncio
+from typing import AsyncGenerator
 from pathlib import Path
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
@@ -1440,7 +1441,7 @@ class ComfyUIPlugin(Star):
         result.chain.clear()
         logger.info(f"[ComfyUI] ✅ 多图模式发送完成")
     @llm_tool(name="comfyui_txt2img")
-    async def comfyui_txt2img(self, event: AstrMessageEvent, ctx: Context = None, prompt: str = None, text: str = None, img_width: int = None, img_height: int = None, direct_send: bool = False) -> MessageEventResult:
+    async def comfyui_txt2img(self, event: AstrMessageEvent, ctx: Context = None, prompt: str = None, text: str = None, img_width: int = None, img_height: int = None, direct_send: bool = False) -> AsyncGenerator[MessageEventResult, None]:
         """ComfyUI 文生图工具"""
         
         # 权限检查

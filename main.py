@@ -317,6 +317,8 @@ class ComfyUIPlugin(Star):
 
     async def initialize(self):
         self.context.activate_llm_tool("comfyui_txt2img")
+        if self.image_backend == "gitee":
+            self.context.activate_llm_tool("comfyui_img2img")
         logger.info("[ComfyUI] 🎨 插件初始化完成，LLM 工具已激活")
 
     # ====== 核心绘图逻辑 ======
@@ -393,6 +395,8 @@ class ComfyUIPlugin(Star):
             "【基础指令】",
             "  /画图 <提示词>     生成图片（转发模式）",
             "  /画图no <提示词>   生成图片（直发模式）",
+            "  /改图 <提示词>     编辑图片（转发模式，需附带或回复图片）",
+            "  /改图no <提示词>   编辑图片（直发模式）",
             "  /comfy帮助         显示此帮助",
             "",
             "【LLM 模式】",
@@ -1086,6 +1090,128 @@ class ComfyUIPlugin(Star):
         async for result in self._handle_paint_logic(event, direct_send=True):
             yield result
 
+    @filter.command("改图")
+    async def cmd_edit_image(self, event: AstrMessageEvent):
+        async for result in self._handle_edit_logic(event, direct_send=False):
+            yield result
+
+    @filter.command("改图no")
+    async def cmd_edit_image_no(self, event: AstrMessageEvent):
+        async for result in self._handle_edit_logic(event, direct_send=True):
+            yield result
+
+    async def _extract_images_from_event(self, event: AstrMessageEvent) -> list[tuple[str, bytes]]:
+        """从消息事件中提取图片，返回 [(filename, bytes), ...]"""
+        image_list = []
+
+        # 从当前消息中收集 Image 组件
+        messages = event.get_messages()
+        all_components = list(messages) if messages else []
+
+        # 从回复链中收集 Image 组件
+        for comp in list(all_components):
+            if isinstance(comp, Reply):
+                reply_chain = getattr(comp, "chain", None)
+                if reply_chain:
+                    all_components.extend(reply_chain)
+
+        for comp in all_components:
+            if isinstance(comp, Image):
+                try:
+                    file_path = await comp.convert_to_file_path()
+                    if file_path and os.path.isfile(file_path):
+                        with open(file_path, "rb") as f:
+                            raw = f.read()
+                        filename = os.path.basename(file_path) or f"{uuid.uuid4()}.png"
+                        image_list.append((filename, raw))
+                except Exception as e:
+                    logger.warning(f"[ComfyUI] 提取图片失败: {e}")
+                    continue
+
+        return image_list
+
+    async def _handle_edit_logic(self, event: AstrMessageEvent, direct_send: bool):
+        """处理改图的核心逻辑"""
+        # 仅 Gitee 后端支持
+        if self.image_backend != "gitee":
+            yield event.plain_result("❌ 改图功能仅在 Gitee AI 后端可用，请在配置中切换后端")
+            return
+
+        # 权限检查
+        allowed, reason = self._check_access(event)
+        if not allowed:
+            yield event.plain_result(reason)
+            return
+
+        try:
+            full_message = event.message_str.strip()
+            parts = full_message.split(' ', 1)
+            prompt = parts[1].strip() if len(parts) > 1 else ""
+
+            if not prompt:
+                yield event.plain_result("❌ 请输入提示词，例如：/改图 把背景换成星空")
+                return
+
+            # 敏感词检查
+            passed, sensitive = self._check_sensitive(prompt, event)
+            if not passed:
+                tip = "、".join(sensitive[:5])
+                extra = f"等 {len(sensitive)} 个" if len(sensitive) > 5 else ""
+                yield event.plain_result(f"🚫 检测到敏感词：{tip}{extra}，无法编辑图片")
+                return
+
+            # 冷却检查
+            ok, remain = self._check_cooldown(event)
+            if not ok:
+                yield event.plain_result(f"⏱️ 冷却中，请在 {remain} 秒后重试")
+                return
+
+            # 提取图片
+            image_list = await self._extract_images_from_event(event)
+            if not image_list:
+                yield event.plain_result("❌ 未检测到图片，请附带图片或回复一条包含图片的消息")
+                return
+
+            logger.info(
+                f"[ComfyUI] 🖌️ 改图开始 | 用户: {event.get_sender_id()} | "
+                f"图片数: {len(image_list)} | Prompt: {prompt[:50]}..."
+            )
+
+            # 调用 API
+            img_data, error_msg = await self.api.edit(prompt, image_list)
+
+            if not img_data:
+                logger.error(f"[ComfyUI] 改图失败: {error_msg}")
+                yield event.plain_result(f"❌ 改图失败：{error_msg}")
+                return
+
+            # 保存图片
+            img_filename = f"{uuid.uuid4()}.png"
+            img_path = self.output_dir / img_filename
+            with open(img_path, 'wb') as fp:
+                fp.write(img_data)
+
+            logger.info(f"[ComfyUI] ✅ 改图已保存: {img_filename}")
+
+            # 发送结果
+            if direct_send:
+                image_component = Image.fromFileSystem(str(img_path))
+                yield event.chain_result([image_component])
+            else:
+                self_id = self._get_self_id(event) or "0"
+                image_component = Image.fromFileSystem(str(img_path))
+                forward_node = Node(
+                    user_id=int(self_id),
+                    nickname="ComfyUI",
+                    content=[image_component]
+                )
+                yield event.chain_result([forward_node])
+
+        except Exception as e:
+            logger.error(f"[ComfyUI] 改图异常: {e}")
+            logger.error(traceback.format_exc())
+            yield event.plain_result(f"❌ 改图出错：{str(e)[:50]}")
+
     # ====== 辅助方法 ======
     def _is_group_message(self, event: AstrMessageEvent) -> bool:
         mt = getattr(event, "message_type", None)
@@ -1558,5 +1684,98 @@ class ComfyUIPlugin(Star):
 
         except Exception as e:
             logger.error(f"[ComfyUI] 执行异常: {e}")
+            logger.error(traceback.format_exc())
+            yield event.plain_result(f"❌ 内部错误: {str(e)[:50]}")
+
+    @llm_tool(name="comfyui_img2img")
+    async def comfyui_img2img(self, event: AstrMessageEvent, ctx: Context = None, prompt: str = None, text: str = None, direct_send: bool = False) -> AsyncGenerator[MessageEventResult, None]:
+        """Gitee AI 改图工具。当用户发送了图片并希望对图片进行编辑、修改时调用此工具。"""
+
+        # 仅 Gitee 后端支持
+        if self.image_backend != "gitee":
+            yield event.plain_result("❌ 改图功能仅在 Gitee AI 后端可用")
+            return
+
+        # 权限检查
+        allowed, reason = self._check_access(event)
+        if not allowed:
+            yield event.plain_result(reason)
+            return
+
+        # 参数处理
+        if not prompt and text:
+            prompt = text
+
+        if not prompt:
+            yield event.plain_result("❌ 未提供 prompt，请重试")
+            return
+
+        if not isinstance(prompt, str) or not prompt.strip():
+            yield event.plain_result("❌ 请输入提示词")
+            return
+
+        # API 检查
+        if not getattr(self, 'api', None):
+            yield event.plain_result("❌ 生图服务未连接，请检查配置")
+            return
+
+        try:
+            # 敏感词检查
+            passed, sensitive = self._check_sensitive(prompt, event)
+            if not passed:
+                tip = "、".join(sensitive[:5])
+                logger.warning(f"[ComfyUI] 用户 {event.get_sender_id()} 触发敏感词: {tip}")
+                yield event.plain_result(f"🚫 检测到敏感词：{tip}，无法编辑")
+                return
+
+            # 冷却检查
+            ok, remain = self._check_cooldown(event)
+            if not ok:
+                yield event.plain_result(f"⏱️ 冷却中，请在 {remain} 秒后重试")
+                return
+
+            # 提取图片
+            image_list = await self._extract_images_from_event(event)
+            if not image_list:
+                yield event.plain_result("❌ 未检测到图片，请附带图片或回复一条包含图片的消息")
+                return
+
+            logger.info(
+                f"[ComfyUI] 🖌️ LLM 改图开始 | 用户: {event.get_sender_id()} | "
+                f"图片数: {len(image_list)} | Prompt: {prompt[:50]}..."
+            )
+
+            # 调用 API
+            img_data, error_msg = await self.api.edit(prompt, image_list)
+
+            if not img_data:
+                logger.error(f"[ComfyUI] LLM 改图失败: {error_msg}")
+                yield event.plain_result(f"❌ 改图失败：{error_msg}")
+                return
+
+            # 保存图片
+            img_filename = f"{uuid.uuid4()}.png"
+            img_path = self.output_dir / img_filename
+            with open(img_path, 'wb') as fp:
+                fp.write(img_data)
+
+            logger.info(f"[ComfyUI] ✅ LLM 改图已保存: {img_filename}")
+
+            # 发送结果
+            if direct_send:
+                image_component = Image.fromFileSystem(str(img_path))
+                yield event.chain_result([image_component])
+            else:
+                self_id = self._get_self_id(event) or "0"
+                image_component = Image.fromFileSystem(str(img_path))
+                forward_node = Node(
+                    user_id=int(self_id),
+                    nickname="ComfyUI",
+                    content=[image_component]
+                )
+                yield event.chain_result([forward_node])
+
+        except Exception as e:
+            logger.error(f"[ComfyUI] LLM 改图异常: {e}")
             logger.error(traceback.format_exc())
             yield event.plain_result(f"❌ 内部错误: {str(e)[:50]}")

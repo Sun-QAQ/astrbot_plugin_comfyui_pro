@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 import base64
 from astrbot.api import logger
@@ -15,6 +16,9 @@ class GiteeImageAPI:
         self.num_inference_steps = gitee_conf.get("num_inference_steps", 9)
         self.guidance_scale = gitee_conf.get("guidance_scale", 1)
         self.image_scale = gitee_conf.get("image_scale", 1)
+        self.edit_model = gitee_conf.get("edit_model", "Qwen-Image-Edit-2511")
+        self.edit_num_inference_steps = gitee_conf.get("edit_num_inference_steps", 4)
+        self.edit_guidance_scale = gitee_conf.get("edit_guidance_scale", 1)
 
         if not self.api_key:
             logger.warning("[Gitee API] 未配置 api_key，生图将会失败")
@@ -109,3 +113,115 @@ class GiteeImageAPI:
                     return img_bytes, None
         except Exception as e:
             return None, f"下载图片失败: {e}"
+
+    def _infer_task_types(self, image_count: int) -> list[str]:
+        """根据图片数量自动推断 task_types"""
+        if image_count >= 2:
+            return ["id", "style"]
+        return ["id"]
+
+    async def _poll_task(self, session: aiohttp.ClientSession, task_id: str, headers: dict):
+        """轮询异步任务直到完成，返回 (img_bytes, error_msg)"""
+        url = f"{self.base_url}/task/{task_id}"
+        max_attempts = 60  # 10 分钟超时 (60 * 10s)
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with session.get(
+                    url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+                ) as resp:
+                    if resp.status != 200:
+                        text = await resp.text()
+                        logger.warning(
+                            f"[Gitee API] 轮询 #{attempt} HTTP {resp.status}: {text[:200]}"
+                        )
+                        await asyncio.sleep(10)
+                        continue
+
+                    data = await resp.json()
+
+                status = data.get("status", "")
+                logger.debug(f"[Gitee API] 轮询 #{attempt} 状态: {status}")
+
+                if status == "success":
+                    output = data.get("output", {})
+                    file_url = output.get("file_url")
+                    if file_url:
+                        return await self._download_image(file_url)
+                    return None, "任务成功但未返回 file_url"
+
+                if status in ("failed", "cancelled"):
+                    error = data.get("error", "未知错误")
+                    return None, f"任务{status}: {error}"
+
+            except aiohttp.ClientError as e:
+                logger.warning(f"[Gitee API] 轮询 #{attempt} 网络错误: {e}")
+            except Exception as e:
+                logger.warning(f"[Gitee API] 轮询 #{attempt} 异常: {e}")
+
+            await asyncio.sleep(10)
+
+        return None, "任务超时（等待超过 10 分钟）"
+
+    async def edit(self, prompt: str, image_bytes_list: list[tuple[str, bytes]]):
+        """
+        图片编辑，返回 (img_bytes, error_msg)。
+        image_bytes_list: [(filename, raw_bytes), ...]
+        """
+        if not self.api_key:
+            return None, "Gitee API Key 未配置，请在插件设置中填写"
+
+        if not image_bytes_list:
+            return None, "未提供图片"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        task_types = self._infer_task_types(len(image_bytes_list))
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                form = aiohttp.FormData()
+                form.add_field("prompt", prompt)
+                form.add_field("model", self.edit_model)
+                form.add_field("num_inference_steps", str(self.edit_num_inference_steps))
+                form.add_field("guidance_scale", str(self.edit_guidance_scale))
+
+                for tt in task_types:
+                    form.add_field("task_types", tt)
+
+                for filename, raw_bytes in image_bytes_list:
+                    form.add_field(
+                        "image",
+                        raw_bytes,
+                        filename=filename,
+                        content_type="application/octet-stream",
+                    )
+
+                async with session.post(
+                    f"{self.base_url}/async/images/edits",
+                    headers=headers,
+                    data=form,
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    if resp.status != 200:
+                        text = await resp.text()
+                        logger.error(f"[Gitee API] 改图请求失败 HTTP {resp.status}: {text[:200]}")
+                        return None, f"Gitee API 改图请求失败: HTTP {resp.status}"
+
+                    data = await resp.json()
+
+                task_id = data.get("task_id")
+                if not task_id:
+                    return None, "Gitee API 未返回 task_id"
+
+                logger.info(f"[Gitee API] 改图任务已提交: {task_id}")
+                return await self._poll_task(session, task_id, headers)
+
+        except aiohttp.ClientError as e:
+            logger.error(f"[Gitee API] 改图网络错误: {e}")
+            return None, f"网络错误: {e}"
+        except Exception as e:
+            logger.error(f"[Gitee API] 改图未知错误: {e}")
+            return None, f"改图失败: {e}"

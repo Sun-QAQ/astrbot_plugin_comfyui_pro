@@ -27,6 +27,7 @@ env/
 .DS_Store
 Thumbs.db
 desktop.ini
+.claude/
 
 # 插件运行时生成的缓存/数据
 html_render_cache/

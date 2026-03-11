@@ -110,6 +110,24 @@
         "description": "输出图片缩放比例",
         "type": "float",
         "default": 1
+      },
+      "edit_model": {
+        "title": "改图模型",
+        "description": "图片编辑模型名称",
+        "type": "string",
+        "default": "Qwen-Image-Edit-2511"
+      },
+      "edit_num_inference_steps": {
+        "title": "改图推理步数",
+        "description": "图片编辑推理步数",
+        "type": "int",
+        "default": 4
+      },
+      "edit_guidance_scale": {
+        "title": "改图引导系数",
+        "description": "图片编辑提示词引导强度",
+        "type": "float",
+        "default": 1
       }
     }
   },

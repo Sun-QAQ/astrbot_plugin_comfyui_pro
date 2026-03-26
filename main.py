@@ -1100,22 +1100,10 @@ class ComfyUIPlugin(Star):
         async for result in self._handle_edit_logic(event, direct_send=False):
             yield result
 
-    async def _extract_images_from_event(self, event: AstrMessageEvent) -> list[tuple[str, bytes]]:
-        """从消息事件中提取图片，返回 [(filename, bytes), ...]"""
+    async def _extract_images_from_components(self, components) -> list[tuple[str, bytes]]:
+        """从组件列表中提取图片，返回 [(filename, bytes), ...]"""
         image_list = []
-
-        # 从当前消息中收集 Image 组件
-        messages = event.get_messages()
-        all_components = list(messages) if messages else []
-
-        # 从回复链中收集 Image 组件
-        for comp in list(all_components):
-            if isinstance(comp, Reply):
-                reply_chain = getattr(comp, "chain", None)
-                if reply_chain:
-                    all_components.extend(reply_chain)
-
-        for comp in all_components:
+        for comp in list(components or []):
             if isinstance(comp, Image):
                 try:
                     file_path = await comp.convert_to_file_path()
@@ -1127,8 +1115,128 @@ class ComfyUIPlugin(Star):
                 except Exception as e:
                     logger.warning(f"[ComfyUI] 提取图片失败: {e}")
                     continue
-
         return image_list
+
+    def _collect_reply_components(self, components) -> list:
+        reply_components = []
+        for comp in list(components or []):
+            if isinstance(comp, Reply):
+                reply_chain = getattr(comp, "chain", None)
+                if reply_chain:
+                    reply_components.extend(reply_chain)
+        return reply_components
+
+    def _message_matches_current_context(self, candidate, event: AstrMessageEvent) -> bool:
+        try:
+            event_sender = str(event.get_sender_id()) if hasattr(event, "get_sender_id") else None
+        except Exception:
+            event_sender = None
+
+        event_session = getattr(event, "session_id", None)
+        event_origin = getattr(event, "unified_msg_origin", None)
+
+        candidate_sender = None
+        for attr in ("sender_id", "user_id", "from_user_id"):
+            value = getattr(candidate, attr, None)
+            if value is not None:
+                candidate_sender = str(value)
+                break
+
+        candidate_session = getattr(candidate, "session_id", None)
+        candidate_origin = getattr(candidate, "unified_msg_origin", None)
+
+        sender_ok = True if candidate_sender is None or event_sender is None else candidate_sender == event_sender
+        session_ok = True
+        if candidate_session is not None and event_session is not None:
+            session_ok = str(candidate_session) == str(event_session)
+        elif candidate_origin is not None and event_origin is not None:
+            session_ok = str(candidate_origin) == str(event_origin)
+
+        return sender_ok and session_ok
+
+    async def _try_extract_recent_images_from_context(self, event: AstrMessageEvent) -> list[tuple[str, bytes]]:
+        """最佳努力地从最近上下文中回溯图片，不支持时优雅降级。"""
+        roots = []
+        message_obj = getattr(event, "message_obj", None)
+        if message_obj is not None:
+            roots.append(message_obj)
+        roots.append(event)
+
+        history_attrs = ("recent_messages", "history_messages", "history", "messages")
+
+        for root in roots:
+            for attr in history_attrs:
+                try:
+                    candidates = getattr(root, attr, None)
+                except Exception as e:
+                    logger.debug(f"[ComfyUI] 读取上下文属性 {attr} 失败: {e}")
+                    continue
+
+                if callable(candidates):
+                    try:
+                        candidates = candidates()
+                    except TypeError:
+                        continue
+                    except Exception as e:
+                        logger.warning(f"[ComfyUI] 调用上下文属性 {attr} 失败: {e}")
+                        continue
+
+                if not isinstance(candidates, (list, tuple)) or not candidates:
+                    continue
+
+                for candidate in reversed(candidates[-6:]):
+                    if candidate is event or candidate is message_obj:
+                        continue
+                    if not self._message_matches_current_context(candidate, event):
+                        continue
+
+                    candidate_components = None
+                    if hasattr(candidate, "get_messages"):
+                        try:
+                            candidate_components = candidate.get_messages()
+                        except Exception as e:
+                            logger.debug(f"[ComfyUI] 读取历史消息组件失败: {e}")
+                    if candidate_components is None:
+                        candidate_components = getattr(candidate, "messages", None)
+                    if candidate_components is None:
+                        candidate_components = getattr(candidate, "chain", None)
+
+                    image_list = await self._extract_images_from_components(candidate_components)
+                    if image_list:
+                        return image_list
+
+        logger.info("[ComfyUI] 未找到可用的最近上下文图片，回退为显式附图/回复图模式")
+        return []
+
+    async def _extract_images_from_event(self, event: AstrMessageEvent) -> list[tuple[str, bytes]]:
+        """从消息事件中提取图片，返回 [(filename, bytes), ...]"""
+        messages = event.get_messages()
+        all_components = list(messages) if messages else []
+        reply_components = self._collect_reply_components(all_components)
+        return await self._extract_images_from_components(all_components + reply_components)
+
+    async def _resolve_images_for_edit(self, event: AstrMessageEvent, allow_recent_fallback: bool = False) -> list[tuple[str, bytes]]:
+        messages = event.get_messages()
+        current_components = list(messages) if messages else []
+
+        image_list = await self._extract_images_from_components(current_components)
+        if image_list:
+            logger.info("[ComfyUI] 改图图片来源: current")
+            return image_list
+
+        reply_components = self._collect_reply_components(current_components)
+        image_list = await self._extract_images_from_components(reply_components)
+        if image_list:
+            logger.info("[ComfyUI] 改图图片来源: reply")
+            return image_list
+
+        if allow_recent_fallback:
+            image_list = await self._try_extract_recent_images_from_context(event)
+            if image_list:
+                logger.info("[ComfyUI] 改图图片来源: recent_context")
+                return image_list
+
+        return []
 
     async def _handle_edit_logic(self, event: AstrMessageEvent, direct_send: bool):
         """处理改图的核心逻辑"""
@@ -1167,7 +1275,7 @@ class ComfyUIPlugin(Star):
                 return
 
             # 提取图片
-            image_list = await self._extract_images_from_event(event)
+            image_list = await self._resolve_images_for_edit(event, allow_recent_fallback=False)
             if not image_list:
                 yield event.plain_result("❌ 未检测到图片，请附带图片或回复一条包含图片的消息")
                 return
@@ -1738,7 +1846,7 @@ class ComfyUIPlugin(Star):
                 return
 
             # 提取图片
-            image_list = await self._extract_images_from_event(event)
+            image_list = await self._resolve_images_for_edit(event, allow_recent_fallback=True)
             if not image_list:
                 yield event.plain_result("❌ 未检测到图片，请附带图片或回复一条包含图片的消息")
                 return

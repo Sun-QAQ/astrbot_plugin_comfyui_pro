@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 import base64
+import traceback
 from astrbot.api import logger
 
 
@@ -179,6 +180,11 @@ class GiteeImageAPI:
         }
 
         task_types = self._infer_task_types(len(image_bytes_list))
+        image_filenames = [filename for filename, _ in image_bytes_list]
+        logger.info(
+            f"[Gitee API] 改图请求准备 | model: {self.edit_model} | "
+            f"task_types: {task_types} | 图片数: {len(image_bytes_list)} | 文件: {image_filenames}"
+        )
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -223,5 +229,8 @@ class GiteeImageAPI:
             logger.error(f"[Gitee API] 改图网络错误: {e}")
             return None, f"网络错误: {e}"
         except Exception as e:
-            logger.error(f"[Gitee API] 改图未知错误: {e}")
-            return None, f"改图失败: {e}"
+            logger.error(
+                f"[Gitee API] 改图未知错误 | type={type(e).__name__} | repr={repr(e)}"
+            )
+            logger.error(traceback.format_exc())
+            return None, f"改图失败: {type(e).__name__}: {repr(e)}"

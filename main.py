@@ -1711,8 +1711,11 @@ class ComfyUIPlugin(Star):
             return
 
         if not isinstance(prompt, str) or not prompt.strip():
-            yield event.plain_result("❌ 请输入提示词")
-            return
+            raw = getattr(event, "message_str", "") or ""
+            prompt = re.sub(r'```math\s*At:\d+```\s*', '', raw).strip()
+            if not prompt:
+                yield event.plain_result("❌ 请输入提示词")
+                return
 
         # API 检查
         if not getattr(self, 'api', None):

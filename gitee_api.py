@@ -209,7 +209,7 @@ class GiteeImageAPI:
                     f"{self.base_url}/async/images/edits",
                     headers=headers,
                     data=form,
-                    timeout=aiohttp.ClientTimeout(total=60),
+                    timeout=aiohttp.ClientTimeout(total=180),
                 ) as resp:
                     if resp.status != 200:
                         text = await resp.text()

@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import base64
 import traceback
+import re
 from astrbot.api import logger
 
 
@@ -17,6 +18,7 @@ class GiteeImageAPI:
         self.num_inference_steps = gitee_conf.get("num_inference_steps", 9)
         self.guidance_scale = gitee_conf.get("guidance_scale", 1)
         self.image_scale = gitee_conf.get("image_scale", 1)
+        self.size = str(gitee_conf.get("size", "")).strip()
         self.edit_model = gitee_conf.get("edit_model", "Qwen-Image-Edit-2511")
         self.edit_num_inference_steps = gitee_conf.get("edit_num_inference_steps", 4)
         self.edit_guidance_scale = gitee_conf.get("edit_guidance_scale", 1)
@@ -54,6 +56,11 @@ class GiteeImageAPI:
         extra["num_inference_steps"] = self.num_inference_steps
         extra["guidance_scale"] = self.guidance_scale
         extra["image_scale"] = self.image_scale
+        if self.size:
+            if re.match(r"^\d+x\d+$", self.size):
+                extra["size"] = self.size
+            else:
+                logger.warning(f"[Gitee API] size 配置无效，已忽略: {self.size}")
         body.update(extra)
 
         try:

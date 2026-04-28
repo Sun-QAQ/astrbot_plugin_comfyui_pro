@@ -155,6 +155,12 @@
         "description": "图片编辑提示词引导强度",
         "type": "float",
         "default": 1
+      },
+      "timeout_seconds": {
+        "title": "生图超时时间(秒)",
+        "description": "Gitee 生图与改图请求总超时时间",
+        "type": "int",
+        "default": 120
       }
     }
   },
@@ -198,6 +204,12 @@
         "description": "可选 png/jpeg/webp",
         "type": "string",
         "default": "png"
+      },
+      "timeout_seconds": {
+        "title": "生图超时时间(秒)",
+        "description": "AnyImage2 生图与改图请求总超时时间",
+        "type": "int",
+        "default": 180
       }
     }
   },

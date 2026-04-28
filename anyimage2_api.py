@@ -17,6 +17,9 @@ class AnyImage2ImageAPI:
         self.size = str(any_conf.get("size", "1024x1024")).strip() or "1024x1024"
         self.quality = str(any_conf.get("quality", "high")).strip() or "high"
         self.output_format = str(any_conf.get("output_format", "png")).strip() or "png"
+        self.timeout_seconds = int(any_conf.get("timeout_seconds", 180))
+        if self.timeout_seconds <= 0:
+            self.timeout_seconds = 180
 
         if not self.api_key:
             logger.warning("[AnyImage2 API] 未配置 api_key，生图将会失败")
@@ -121,7 +124,7 @@ class AnyImage2ImageAPI:
             "accept": "text/event-stream",
         }
 
-        timeout = aiohttp.ClientTimeout(total=180)
+        timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
 
         try:
             async with aiohttp.ClientSession() as session:

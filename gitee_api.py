@@ -22,6 +22,9 @@ class GiteeImageAPI:
         self.edit_model = gitee_conf.get("edit_model", "Qwen-Image-Edit-2511")
         self.edit_num_inference_steps = gitee_conf.get("edit_num_inference_steps", 4)
         self.edit_guidance_scale = gitee_conf.get("edit_guidance_scale", 1)
+        self.timeout_seconds = int(gitee_conf.get("timeout_seconds", 120))
+        if self.timeout_seconds <= 0:
+            self.timeout_seconds = 120
 
         if not self.api_key:
             logger.warning("[Gitee API] 未配置 api_key，生图将会失败")
@@ -69,7 +72,7 @@ class GiteeImageAPI:
                     f"{self.base_url}/images/generations",
                     headers=headers,
                     json=body,
-                    timeout=aiohttp.ClientTimeout(total=120),
+                    timeout=aiohttp.ClientTimeout(total=self.timeout_seconds),
                 ) as resp:
                     if resp.status != 200:
                         text = await resp.text()
@@ -216,7 +219,7 @@ class GiteeImageAPI:
                     f"{self.base_url}/async/images/edits",
                     headers=headers,
                     data=form,
-                    timeout=aiohttp.ClientTimeout(total=180),
+                    timeout=aiohttp.ClientTimeout(total=self.timeout_seconds),
                 ) as resp:
                     if resp.status != 200:
                         text = await resp.text()

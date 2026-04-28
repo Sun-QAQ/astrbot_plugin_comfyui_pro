@@ -119,6 +119,10 @@ class ComfyUIPlugin(Star):
                 from .gitee_api import GiteeImageAPI
                 self.api = GiteeImageAPI(self.config)
                 logger.info(f"[ComfyUI] ✅ Gitee AI 后端初始化成功")
+            elif self.image_backend == "anyimage2":
+                from .anyimage2_api import AnyImage2ImageAPI
+                self.api = AnyImage2ImageAPI(self.config)
+                logger.info(f"[ComfyUI] ✅ AnyImage2 后端初始化成功")
             else:
                 from .comfyui_api import ComfyUI
                 self.api = ComfyUI(self.config, data_dir=self.data_dir)
@@ -317,7 +321,7 @@ class ComfyUIPlugin(Star):
 
     async def initialize(self):
         self.context.activate_llm_tool("comfyui_txt2img")
-        if self.image_backend == "gitee":
+        if self._supports_img2img_backend():
             self.context.activate_llm_tool("comfyui_img2img")
         logger.info("[ComfyUI] 🎨 插件初始化完成，LLM 工具已激活")
 
@@ -721,7 +725,11 @@ class ComfyUIPlugin(Star):
 
     def _is_comfyui_backend(self) -> bool:
         """当前是否使用 ComfyUI 后端"""
-        return self.image_backend != "gitee"
+        return self.image_backend == "comfyui"
+
+    def _supports_img2img_backend(self) -> bool:
+        """当前后端是否支持改图"""
+        return self.image_backend in {"gitee", "anyimage2"}
 
     @filter.command("comfy_ls")
     async def cmd_comfy_list(self, event: AstrMessageEvent):
@@ -732,7 +740,7 @@ class ComfyUIPlugin(Star):
             return
 
         if not self._is_comfyui_backend():
-            yield event.plain_result("ℹ️ 当前使用 Gitee AI 后端，工作流管理仅在 ComfyUI 模式下可用")
+            yield event.plain_result("ℹ️ 当前后端非 ComfyUI，工作流管理仅在 ComfyUI 模式下可用")
             return
 
         if not self.workflow_dir.exists():
@@ -791,7 +799,7 @@ class ComfyUIPlugin(Star):
             return
 
         if not self._is_comfyui_backend():
-            yield event.plain_result("ℹ️ 当前使用 Gitee AI 后端，工作流管理仅在 ComfyUI 模式下可用")
+            yield event.plain_result("ℹ️ 当前后端非 ComfyUI，工作流管理仅在 ComfyUI 模式下可用")
             return
 
         args = event.message_str.split()
@@ -850,7 +858,7 @@ class ComfyUIPlugin(Star):
             return
 
         if not self._is_comfyui_backend():
-            yield event.plain_result("ℹ️ 当前使用 Gitee AI 后端，工作流管理仅在 ComfyUI 模式下可用")
+            yield event.plain_result("ℹ️ 当前后端非 ComfyUI，工作流管理仅在 ComfyUI 模式下可用")
             return
 
         full_text = event.message_str
@@ -904,7 +912,7 @@ class ComfyUIPlugin(Star):
             return
 
         if not self._is_comfyui_backend():
-            yield event.plain_result("ℹ️ 当前使用 Gitee AI 后端，步数覆盖仅在 ComfyUI 模式下可用")
+            yield event.plain_result("ℹ️ 当前后端非 ComfyUI，步数覆盖仅在 ComfyUI 模式下可用")
             return
     
         # 检查 API
@@ -1240,9 +1248,9 @@ class ComfyUIPlugin(Star):
 
     async def _handle_edit_logic(self, event: AstrMessageEvent, direct_send: bool):
         """处理改图的核心逻辑"""
-        # 仅 Gitee 后端支持
-        if self.image_backend != "gitee":
-            yield event.plain_result("❌ 改图功能仅在 Gitee AI 后端可用，请在配置中切换后端")
+        # 仅支持改图的后端可用
+        if not self._supports_img2img_backend():
+            yield event.plain_result("❌ 当前后端不支持改图，请切换到 gitee 或 anyimage2")
             return
 
         # 权限检查
@@ -1799,9 +1807,9 @@ class ComfyUIPlugin(Star):
     async def comfyui_img2img(self, event: AstrMessageEvent, ctx: Context = None, prompt: str = None, text: str = None, direct_send: bool = True) -> AsyncGenerator[MessageEventResult, None]:
         """Gitee AI 改图工具。当用户发送了图片并希望对图片进行编辑、修改时调用此工具。"""
 
-        # 仅 Gitee 后端支持
-        if self.image_backend != "gitee":
-            yield event.plain_result("❌ 改图功能仅在 Gitee AI 后端可用")
+        # 仅支持改图的后端可用
+        if not self._supports_img2img_backend():
+            yield event.plain_result("❌ 当前后端不支持改图")
             return
 
         # 权限检查

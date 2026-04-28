@@ -1,11 +1,11 @@
 {
   "image_backend": {
     "title": "生图后端",
-    "description": "选择生图方式：comfyui 使用本地 ComfyUI，gitee 使用 Gitee AI 云端生图",
+    "description": "选择生图方式：comfyui 使用本地 ComfyUI，gitee 使用 Gitee AI 云端生图，anyimage2 使用 AnyImage2 云端生图",
     "type": "string",
     "default": "comfyui",
-    "options": ["comfyui", "gitee"],
-    "enum": ["comfyui", "gitee"]
+    "options": ["comfyui", "gitee", "anyimage2"],
+    "enum": ["comfyui", "gitee", "anyimage2"]
   },
   "server_address": {
     "description": "ComfyUI 服务端 IP、端口",
@@ -155,6 +155,49 @@
         "description": "图片编辑提示词引导强度",
         "type": "float",
         "default": 1
+      }
+    }
+  },
+  "anyimage2_settings": {
+    "description": "AnyImage2 生图配置（后端选择 anyimage2 时生效）",
+    "type": "object",
+    "items": {
+      "api_key": {
+        "title": "API Key",
+        "description": "AnyImage2 平台的 API Key",
+        "type": "string",
+        "obvious_hint": true,
+        "default": ""
+      },
+      "base_url": {
+        "title": "接口地址",
+        "description": "AnyImage2 API 端点",
+        "type": "string",
+        "default": "https://a-ocnfniawgw.cn-shanghai.fcapp.run/v1/responses"
+      },
+      "model": {
+        "title": "模型",
+        "description": "AnyImage2 模型名称",
+        "type": "string",
+        "default": "gpt-5.3-codex"
+      },
+      "size": {
+        "title": "图片尺寸",
+        "description": "输出尺寸，如 1024x1024 或 auto",
+        "type": "string",
+        "default": "1024x1024"
+      },
+      "quality": {
+        "title": "质量",
+        "description": "可选 auto/low/medium/high",
+        "type": "string",
+        "default": "high"
+      },
+      "output_format": {
+        "title": "输出格式",
+        "description": "可选 png/jpeg/webp",
+        "type": "string",
+        "default": "png"
       }
     }
   },

@@ -1,6 +1,5 @@
 import aiohttp
 import base64
-import json
 from astrbot.api import logger
 
 
@@ -55,7 +54,7 @@ class AnyImage2ImageAPI:
             "input": input_field,
             "tools": [self._build_tool(action)],
             "tool_choice": "required",
-            "stream": True,
+            "stream": False,
         }
 
     def _to_data_url(self, filename: str, raw: bytes) -> str:
@@ -121,7 +120,7 @@ class AnyImage2ImageAPI:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "accept": "text/event-stream",
+            "accept": "application/json",
         }
 
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
@@ -140,35 +139,6 @@ class AnyImage2ImageAPI:
                             f"[AnyImage2 API] 请求失败 HTTP {resp.status}: {text[:200]}"
                         )
                         return None, f"AnyImage2 API 请求失败: HTTP {resp.status}"
-
-                    content_type = (resp.headers.get("Content-Type") or "").lower()
-
-                    if "text/event-stream" in content_type:
-                        while not resp.content.at_eof():
-                            line = await resp.content.readline()
-                            if not line:
-                                continue
-
-                            decoded_line = line.decode("utf-8", errors="ignore").strip()
-                            if not decoded_line or not decoded_line.startswith("data:"):
-                                continue
-
-                            data_str = decoded_line[5:].strip()
-                            if not data_str or data_str == "[DONE]":
-                                continue
-
-                            try:
-                                data = json.loads(data_str)
-                            except json.JSONDecodeError:
-                                continue
-
-                            img_bytes, url = self._extract_image_from_obj(data)
-                            if img_bytes:
-                                return img_bytes, None
-                            if url:
-                                return await self._download_image(session, url)
-
-                        return None, "AnyImage2 未返回图片数据"
 
                     data = await resp.json()
                     img_bytes, url = self._extract_image_from_obj(data)
